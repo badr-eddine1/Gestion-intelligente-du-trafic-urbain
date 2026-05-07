@@ -62,7 +62,8 @@ class Intersection:
     def get_state_key(self) -> tuple:
         """Retourne une clé unique pour l'état (utilisée par Q-learning)"""
         return (self.queues['N'], self.queues['S'],
-                self.queues['E'], self.queues['O'], self.phase)
+                self.queues['E'], self.queues['O'], self.phase,
+                int(self.in_orange))
     
     def _generate_arrivals(self) -> None:
         """Génère les arrivées aléatoires selon Poisson"""
@@ -126,8 +127,10 @@ class Intersection:
         total_waiting = sum(self.queues.values())
         reward = -total_waiting
         
-        # Pénalité supplémentaire si on change trop souvent
-        # (optionnel, peut être ajouté)
+        # Pénalité pour changement de phase trop fréquent
+        # Évite que l'agent change à chaque pas sans raison
+        if action == 1:
+            reward -= 1
         
         return reward, self.get_state_key()
     
