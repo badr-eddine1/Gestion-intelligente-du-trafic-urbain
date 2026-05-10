@@ -1,101 +1,102 @@
 """
-Agent Q-learning pour contrôle de feux de signalisation
+Agent Q-Learning tabulaire pour le contrôle des feux de signalisation
+Implémenté from scratch — aucune bibliothèque RL externe
 """
 
 import numpy as np
 import random
 from collections import defaultdict
-from typing import Tuple, Optional
+from typing import Tuple, List
 import pickle
+
 
 class QLearningAgent:
     """
-    Agent utilisant l'algorithme Q-learning tabulaire
+    Agent utilisant l'algorithme Q-Learning tabulaire.
+
+    La table Q est stockée dans un defaultdict :
+        Q[état] = [Q(s, maintenir), Q(s, changer)]
+
+    Mise à jour de Bellman :
+        Q(s,a) ← Q(s,a) + α · [r + γ · max_a' Q(s',a') − Q(s,a)]
     """
-    
+
     def __init__(self,
-                 alpha: float = 0.1,      # Taux d'apprentissage
-                 gamma: float = 0.95,     # Facteur d'actualisation
-                 epsilon: float = 1.0,    # Taux d'exploration initial
-                 epsilon_min: float = 0.01,
-                 epsilon_decay: float = 0.995):
+                 alpha: float         = 0.1,    # Taux d'apprentissage
+                 gamma: float         = 0.95,   # Facteur d'actualisation
+                 epsilon: float       = 1.0,    # Exploration initiale
+                 epsilon_min: float   = 0.01,   # Exploration minimale
+                 epsilon_decay: float = 0.995): # Décroissance par épisode
         """
-        Args:
-            alpha: taux d'apprentissage (0 < alpha <= 1)
-            gamma: facteur d'actualisation (0 <= gamma <= 1)
-            epsilon: probabilité d'exploration initiale
-            epsilon_min: valeur minimale d'epsilon
-            epsilon_decay: facteur de décroissance d'epsilon
+        Justification des paramètres par défaut :
+          alpha = 0.1   → convergence stable, évite les oscillations
+          gamma = 0.95  → horizon court/moyen, récompenses prochaines valorisées
+          epsilon = 1.0 → exploration totale au départ
+          epsilon_min = 0.01 → 1 % d'exploration résiduelle (états rares)
+          epsilon_decay = 0.995 → transition douce sur ~500 épisodes
         """
-        self.alpha = alpha
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.epsilon_min = epsilon_min
+        self.alpha         = alpha
+        self.gamma         = gamma
+        self.epsilon       = epsilon
+        self.epsilon_min   = epsilon_min
         self.epsilon_decay = epsilon_decay
-        
-        # Table Q: dictionnaire {état: [Q(s,a0), Q(s,a1)]}
+
+        # Table Q initialisée à 0 pour tout état non visité
         self.Q = defaultdict(lambda: [0.0, 0.0])
-        
-        # Statistiques
-        self.episode_rewards = []
-        self.epsilon_history = []
-        
+
+        # Historiques pour visualisation
+        self.episode_rewards  = []
+        self.epsilon_history  = []
+
+    # ──────────────────────────────────────────────────────────────────────────
     def act(self, state: tuple) -> int:
         """
-        Choisit une action selon la politique ε-greedy
-        
-        Args:
-            state: l'état courant (clé)
-            
-        Returns:
-            action (0 ou 1)
+        Politique ε-greedy :
+          - avec proba ε  → action aléatoire (exploration)
+          - avec proba 1-ε → meilleure action connue (exploitation)
         """
         if random.random() < self.epsilon:
-            # Exploration: action aléatoire
             return random.randint(0, 1)
-        else:
-            # Exploitation: meilleure action
-            q_values = self.Q[state]
-            # En cas d'égalité, choisir arbitrairement la première
-            return int(np.argmax(q_values))
-    
-    def learn(self, 
-              state: tuple, 
-              action: int, 
-              reward: float, 
+        return int(np.argmax(self.Q[state]))
+
+    def get_best_action(self, state: tuple) -> int:
+        """Retourne la meilleure action sans exploration (évaluation)."""
+        return int(np.argmax(self.Q[state]))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    def learn(self,
+              state: tuple,
+              action: int,
+              reward: float,
               next_state: tuple) -> float:
         """
-        Met à jour la table Q avec l'équation de Bellman
-        
+        Met à jour la table Q avec l'équation de Bellman.
+
         Returns:
-            td_error: erreur TD
+            td_error : erreur de différence temporelle
         """
-        # Q-learning update:
-        # Q(s,a) = Q(s,a) + α * [r + γ * max_a' Q(s',a') - Q(s,a)]
-        
-        best_next = max(self.Q[next_state])  # max_a' Q(s',a')
-        td_target = reward + self.gamma * best_next
-        td_error = td_target - self.Q[state][action]
+        best_next  = max(self.Q[next_state])
+        td_target  = reward + self.gamma * best_next
+        td_error   = td_target - self.Q[state][action]
         self.Q[state][action] += self.alpha * td_error
-        
         return td_error
-    
+
     def decay_epsilon(self):
-        """Diminue l'exploration au fil du temps"""
-        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+        """Diminue ε après chaque épisode."""
+        self.epsilon = max(self.epsilon_min,
+                           self.epsilon * self.epsilon_decay)
         self.epsilon_history.append(self.epsilon)
-    
-    def get_best_action(self, state: tuple) -> int:
-        """Retourne la meilleure action (sans exploration)"""
-        return int(np.argmax(self.Q[state]))
-    
+
+    # ──────────────────────────────────────────────────────────────────────────
     def save(self, filepath: str):
-        """Sauvegarde la table Q"""
+        """Sauvegarde la table Q dans un fichier pickle."""
         with open(filepath, 'wb') as f:
             pickle.dump(dict(self.Q), f)
-    
+        print(f"  Agent sauvegardé → {filepath}")
+
     def load(self, filepath: str):
-        """Charge une table Q"""
+        """Charge une table Q depuis un fichier pickle."""
         with open(filepath, 'rb') as f:
             loaded = pickle.load(f)
-            self.Q = defaultdict(lambda: [0.0, 0.0], loaded)
+        self.Q = defaultdict(lambda: [0.0, 0.0], loaded)
+        print(f"  Agent chargé ← {filepath}  ({len(self.Q)} états)")
